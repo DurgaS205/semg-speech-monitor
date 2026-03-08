@@ -1,2 +1,3 @@
 # semg-speech-monitor
-Full stack collaborative project 
+
+Full stack stutter monitoring system
