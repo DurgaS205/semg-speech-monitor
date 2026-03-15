@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<meta charset="UTF-8">
+<title>Patient Dashboard</title>
+<link rel="stylesheet" href="../css/dashboard.css">
+</head>
+
+<body>
+
+<div class="container">
+    <a href="login.html" class="back-icon">
+    <i class="fa-solid fa-arrow-left"></i>
+</a>
+
+<h2>Patient Information</h2>
+
+<div class="card patient-info">
+
+<img src="../assets/sarah.png" class="patient-photo">
+
+<div class="details">
+
+<p><strong>Name:</strong> Sarah Thomas</p>
+<p><strong>Age:</strong> 24</p>
+<p><strong>Gender:</strong> Female</p>
+<p><strong>Patient ID:</strong> ST102</p>
+<p><strong>Email:</strong> sarah_thomas8765@email.com</p>
+</div>
+
+</div>
+
+
+<div class="history-header">
+    <h2>Speech Medical History</h2>
+    <button class="history-btn">Episode History</button>
+</div>
+
+<div class="card history">
+
+<div class="history-box">
+<h4>Speech Irregularity</h4>
+<p>Moderate stuttering during fast speech.</p>
+</div>
+
+<div class="history-box">
+<h4>Detected Episodes</h4>
+<p>12 irregular speech events recorded.</p>
+</div>
+
+<div class="history-box">
+<h4>Notes</h4>
+<p>Occurs mostly under stress.</p>
+</div>
+
+</div>
+
+<h2>Monitoring Session</h2>
+
+<div class="card session">
+
+<div class="session-content">
+
+<div class="session-info">
+<p><strong>Device Status:</strong> <span id="deviceStatus">Connected</span></p>
+<p><strong>sEMG Electrodes:</strong> <span id="electrodeStatus">Active</span></p>
+<p><strong>Last Updated:</strong> 5 seconds ago</p>
+</div>
+
+<div class="session-toggle">
+<label class="switch">
+<input type="checkbox" id="monitorToggle" >
+<span class="slider"></span>
+</label>
+</div>
+
+</div>
+
+</div>
+
+
+<div class="graph-button">
+
+<button onclick="openGraph()">View Live sEMG Signal</button>
+
+</div>
+
+</div>
+
+<script src="../js/dashboard.js"></script>
+
+</body>
+</html>
