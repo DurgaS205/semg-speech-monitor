@@ -1,58 +1,35 @@
+const loginBtn = document.getElementById('loginBtn');
+const errorMsg = document.getElementById('errorMsg');
 
+loginBtn.addEventListener('click', function () {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value.trim();
 
+  errorMsg.textContent = '';
 
-// LOGIN LOGIC
+  if (!email || !password) {
+    errorMsg.textContent = 'Please enter your email and password.';
+    return;
+  }
 
-document.getElementById("loginForm").addEventListener("submit", function(e){
+  if (!email.includes('@')) {
+    errorMsg.textContent = 'Please enter a valid email address.';
+    return;
+  }
 
-e.preventDefault();
+  if (password.length < 4) {
+    errorMsg.textContent = 'Password must be at least 4 characters.';
+    return;
+  }
 
-const email = document.getElementById("email").value;
-const password = document.getElementById("password").value;
+  // Save email to sessionStorage so dashboard can show it
+  sessionStorage.setItem('userEmail', email);
 
-const correctEmail = "sarahthomas8765@gmail.com";
-const correctPassword = "12345";
-
-if(email === correctEmail && password === correctPassword){
-
-window.location.href = "dashboard.html";
-
-}
-else{
-
-document.getElementById("error").innerText = "Invalid email or password";
-
-}
-
+  // Redirect to dashboard
+  window.location.href = 'dashboard.html';
 });
 
-
-// SLIDESHOW LOGIC
-
-const images = [
-"../assets/slide1.jpg",
-"../assets/slide 2.jpg",
-"../assets/slide 3.jpg",
-"../assets/slide 4.jpg",
-"../assets/slide 5.jpg"
-];
-
-let index = 0;
-
-function changeBackground(){
-
-const container = document.querySelector(".slideshow-container");
-
-container.style.backgroundImage = "url(' "+images[index] + " ')";
-
-index++;
-
-if(index >= images.length){
-index = 0;
-}
-
-}
-setInterval(changeBackground, 5000);
-
-changeBackground();
-
+// Allow pressing Enter to submit
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') loginBtn.click();
+});
