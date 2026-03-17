@@ -1,94 +1,191 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<meta charset="UTF-8">
-<title>Patient Dashboard</title>
-<link rel="stylesheet" href="../css/dashboard.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VAAKYA – Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/dashboard.css"/>
 </head>
-
 <body>
 
-<div class="container">
-    <a href="login.html" class="back-icon">
-    <i class="fa-solid fa-arrow-left"></i>
-</a>
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-left">
+      <div class="nav-brand">
+        <div class="nav-brand-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm-1 13H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+        </div>
+        <span class="nav-brand-name">VAAKYA</span>
+      </div>
+      <button class="back-btn" onclick="window.location.href='login.html'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Back
+      </button>
+    </div>
+    <div class="nav-right">
+      <div class="nav-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        Live Session
+      </div>
+      <div class="nav-avatar" id="navAvatar">ST</div>
+    </div>
+  </nav>
 
-<h2>Patient Information</h2>
+  <!-- MAIN CONTENT -->
+  <main class="dash-main">
 
-<div class="card patient-info">
+    <div class="dash-header">
+      <h1>Patient Information</h1>
+      <div class="breadcrumb">Dashboard / <span>Patient Details</span></div>
+    </div>
 
-<img src="../assets/sarah.png" class="patient-photo">
+    <!-- PATIENT CARD -->
+    <div class="section">
+      <div class="patient-card">
+        <div class="patient-avatar">
+          <img src="/semg-speech-monitor/assets/sarah.png" alt="Sarah Thomas" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
+          <div class="patient-avatar-fallback">ST</div>
+        </div>
+        <div class="patient-info">
+          <div class="patient-name">Sarah Thomas</div>
+          <div class="patient-meta">
+            <div class="meta-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="7" r="4"/>
+                <path d="M5.5 21a9 9 0 0 1 13 0"/>
+              </svg>
+              <strong>24 yrs</strong>&nbsp;· Female
+            </div>
+            <div class="meta-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <path d="M8 21h8M12 17v4"/>
+              </svg>
+              <strong>ID:</strong>&nbsp;ST102
+            </div>
+            <div class="meta-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+              </svg>
+              sarah_thomas8765@email.com
+            </div>
+          </div>
+        </div>
+        <div class="patient-badge">
+          <span class="badge badge-blue"><span class="badge-dot"></span>Active Patient</span>
+          <span class="badge badge-orange"><span class="badge-dot"></span>Moderate Risk</span>
+        </div>
+      </div>
+    </div>
 
-<div class="details">
+    <!-- SPEECH MEDICAL HISTORY -->
+    <div class="section">
+      <div class="history-header">
+        <div class="section-label">Speech Medical History</div>
+        <button class="btn-outline">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 8 12 12 14 14"/>
+          </svg>
+          Episode History
+        </button>
+      </div>
+      <div class="history-grid">
+        <div class="history-cell">
+          <div class="cell-icon icon-purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
+          </div>
+          <div class="cell-title">Speech Irregularity</div>
+          <div class="cell-value">Moderate stuttering during fast speech.</div>
+        </div>
+        <div class="history-cell">
+          <div class="cell-icon icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </div>
+          <div class="cell-title">Detected Episodes</div>
+          <div class="cell-value"><span class="highlight">12</span>Irregular speech events recorded.</div>
+        </div>
+        <div class="history-cell">
+          <div class="cell-icon icon-teal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+          </div>
+          <div class="cell-title">Clinical Notes</div>
+          <div class="cell-value">Occurs mostly under stress.</div>
+        </div>
+      </div>
+    </div>
 
-<p><strong>Name:</strong> Sarah Thomas</p>
-<p><strong>Age:</strong> 24</p>
-<p><strong>Gender:</strong> Female</p>
-<p><strong>Patient ID:</strong> ST102</p>
-<p><strong>Email:</strong> sarah_thomas8765@email.com</p>
-</div>
+    <!-- MONITORING SESSION -->
+    <div class="section">
+      <div class="section-label">Monitoring Session</div>
+      <div class="monitor-card">
+        <div class="monitor-info">
+          <div class="monitor-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <path d="M8 21h8M12 17v4"/>
+            </svg>
+            <strong>Device Status:</strong>
+            <div class="status-dot-wrap">
+              <div class="status-dot" id="statusDot"></div>
+              <span class="status-text" id="statusText">Connected</span>
+            </div>
+          </div>
+          <div class="monitor-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+            </svg>
+            <strong>sEMG Electrodes:</strong>
+            <span class="electrode-text" id="electrodeText">Active</span>
+          </div>
+          <div class="monitor-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <strong>Last Updated:</strong>&nbsp;<span id="lastUpdated">Just now</span>
+          </div>
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Session Active</span>
+          <label class="toggle">
+            <input type="checkbox" id="sessionToggle" checked/>
+            <div class="toggle-track">
+              <div class="toggle-thumb"></div>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
 
-</div>
+    <!-- FOOTER BUTTON -->
+    <div class="dash-footer fade-in delay-4">
+      <button class="btn-primary" id="liveSignalBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        View Live sEMG Signal
+      </button>
+    </div>
 
+  </main>
 
-<div class="history-header">
-    <h2>Speech Medical History</h2>
-    <button class="history-btn">Episode History</button>
-</div>
-
-<div class="card history">
-
-<div class="history-box">
-<h4>Speech Irregularity</h4>
-<p>Moderate stuttering during fast speech.</p>
-</div>
-
-<div class="history-box">
-<h4>Detected Episodes</h4>
-<p>12 irregular speech events recorded.</p>
-</div>
-
-<div class="history-box">
-<h4>Notes</h4>
-<p>Occurs mostly under stress.</p>
-</div>
-
-</div>
-
-<h2>Monitoring Session</h2>
-
-<div class="card session">
-
-<div class="session-content">
-
-<div class="session-info">
-<p><strong>Device Status:</strong> <span id="deviceStatus">Connected</span></p>
-<p><strong>sEMG Electrodes:</strong> <span id="electrodeStatus">Active</span></p>
-<p><strong>Last Updated:</strong> 5 seconds ago</p>
-</div>
-
-<div class="session-toggle">
-<label class="switch">
-<input type="checkbox" id="monitorToggle" >
-<span class="slider"></span>
-</label>
-</div>
-
-</div>
-
-</div>
-
-
-<div class="graph-button">
-
-<button onclick="openGraph()">View Live sEMG Signal</button>
-
-</div>
-
-</div>
-
-<script src="../js/dashboard.js"></script>
-
+  <script src="../js/dashboard.js"></script>
 </body>
 </html>
