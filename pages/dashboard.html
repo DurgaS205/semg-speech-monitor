@@ -18,7 +18,7 @@
         </div>
         <span class="nav-brand-name">VAAKYA</span>
       </div>
-      <button class="back-btn" onclick="window.location.href='login.html'">
+      <button class="back-btn" onclick="localStorage.removeItem('vaakya_loggedIn'); window.location.href='login.html';">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
@@ -48,7 +48,8 @@
     <div class="section">
       <div class="patient-card">
         <div class="patient-avatar">
-          <img src="/semg-speech-monitor/assets/sarah.png" alt="Sarah Thomas" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
+          <!-- FIX: corrected image path to be relative to pages/ folder -->
+          <img src="assets/sarah.png" alt="Sarah Thomas" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
           <div class="patient-avatar-fallback">ST</div>
         </div>
         <div class="patient-info">
@@ -88,7 +89,8 @@
     <div class="section">
       <div class="history-header">
         <div class="section-label">Speech Medical History</div>
-        <button class="btn-outline">
+        <!-- FIX: link to sibling page episodehistory.html -->
+        <button class="btn-outline" onclick="window.location.href='episodehistory.html'">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
             <polyline points="12 8 12 12 14 14"/>
@@ -113,7 +115,7 @@
             </svg>
           </div>
           <div class="cell-title">Detected Episodes</div>
-          <div class="cell-value"><span class="highlight">12</span>Irregular speech events recorded.</div>
+          <div class="cell-value"><span class="highlight" id="episodeCount">0</span><span id="episodeLabel">No episodes recorded yet.</span></div>
         </div>
         <div class="history-cell">
           <div class="cell-icon icon-teal">
@@ -176,6 +178,7 @@
 
     <!-- FOOTER BUTTON -->
     <div class="dash-footer fade-in delay-4">
+      <!-- FIX: navigate to sibling semg.html -->
       <button class="btn-primary" id="liveSignalBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>

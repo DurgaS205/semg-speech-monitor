@@ -419,3 +419,11 @@ html, body {
   .patient-card { flex-wrap: wrap; }
   .patient-badge { align-items: flex-start; }
 }
+.dash-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 0 40px;
+}
+

@@ -1,313 +1,398 @@
-import serial
-import time
-import numpy as np
-from collections import deque
-from scipy.signal import find_peaks
 import asyncio
 import websockets
 import json
+import time
 import threading
+from collections import deque
+import numpy as np
+import serial
+from flask import Flask, jsonify
+from flask_cors import CORS
+
+# ═══════════════════════════════════════════════════════════
+#  VAAKYA — sEMG SERVER  (Hardware Mode)
+#
+#  KEY FIX: Strain is NOT based on signal level alone.
+#  Normal speech always produces high RMS — that is expected.
+#  Strain/stuttering is detected by:
+#    1. RMS variability (coefficient of variation) — stuttering
+#       causes erratic spikes, smooth speech has low variance
+#    2. Prolonged tension — RMS stays elevated even in silence
+#    3. Onset irregularity — abrupt starts vs smooth ramp-up
+# ═══════════════════════════════════════════════════════════
 
 # ─────────────────────────────────────────
-#  USER SETTINGS
+#  SETTINGS
 # ─────────────────────────────────────────
-PORT          = "COM7"
-BAUD          = 115200
-FS            = 200
-REST_TIME     = 10
-SPEECH_TIME   = 10
-ONSET_FACTOR  = 2.5
-OFFSET_FACTOR = 1.5
-MIN_SPEECH_MS = 80
-GRAPH_SECONDS = 5
-GRAPH_POINTS  = FS * GRAPH_SECONDS
-WS_PORT       = 8765   # ← NEW: WebSocket port
+PORT            = "COM7"
+BAUD            = 115200
+FS              = 200
+
+REST_TIME       = 10          # seconds for rest calibration
+SPEECH_TIME     = 10          # seconds for speech calibration
+MIN_SPEECH_MS   = 80          # ignore bursts shorter than this
+
+RAW_BUF_SIZE    = 20          # RMS window
+SMOOTH_BUF_SIZE = 3           # smoothing window
+STRAIN_BUF_SIZE = 40          # ~200ms window for variability calculation
+
+WS_PORT         = 8765
+API_PORT        = 5000
 
 # ─────────────────────────────────────────
-#  SERIAL SETUP
+#  STRAIN THRESHOLDS
+#  These are based on coefficient of variation (CV = std/mean)
+#  of the smoothed RMS — NOT on signal level.
+#  Normal speech: low CV (smooth, consistent muscle activation)
+#  Stuttering:    high CV (erratic, spiky activation)
 # ─────────────────────────────────────────
-ser = serial.Serial(PORT, BAUD, timeout=1)
-time.sleep(2)
-print("✅ Connected to ESP32 on", PORT)
+CV_MODERATE_THRESH = 0.25     # CV above this = Moderate strain
+CV_HIGH_THRESH     = 0.45     # CV above this = High strain
+
+# Tension threshold: RMS stays above this during silence = strain
+TENSION_THRESH_RATIO = 0.30   # 30% of signal_range above baseline
 
 # ─────────────────────────────────────────
-#  BUFFERS
+#  GLOBAL STATE
 # ─────────────────────────────────────────
-raw_buf        = deque(maxlen=40)
-smooth_buf     = deque(maxlen=10)
-graph_rms      = deque(maxlen=GRAPH_POINTS)
-graph_smoothed = deque(maxlen=GRAPH_POINTS)
-graph_norm     = deque(maxlen=GRAPH_POINTS)
-graph_time     = deque(maxlen=GRAPH_POINTS)
-graph_events   = []
-
-baseline_rms  = None
-mvc_rms       = None
-onset_thresh  = None
-offset_thresh = None
-in_speech     = False
-speech_start  = None
-speech_count  = 0
-session_start = None
-
-# ← NEW: shared state for WebSocket broadcast
 connected_clients = set()
-latest_payload    = {}
+
+baseline_rms  = 0.0
+mvc_rms       = 0.0
+signal_range  = 0.0
+onset_thresh  = 0.0
+offset_thresh = 0.0
+snr           = 0.0
+
+session_active  = False
+session_start_t = None
 
 # ─────────────────────────────────────────
-#  CORE FUNCTIONS  (unchanged)
+#  FLASK API
 # ─────────────────────────────────────────
-def read_raw():
-    while True:
-        line = ser.readline().decode(errors="ignore").strip()
-        try:
-            val = float(line)
-            if 0 <= val <= 4095:
-                return val
-        except ValueError:
-            continue
+app = Flask(__name__)
+CORS(app)
 
-def read_rms():
-    val = read_raw()
-    raw_buf.append(val)
-    if len(raw_buf) < 40:
-        return None
-    dc  = np.mean(raw_buf)
-    ac  = np.array(raw_buf) - dc
-    return float(np.sqrt(np.mean(ac ** 2)))
+@app.route('/start', methods=['POST'])
+def api_start():
+    global session_active, session_start_t
+    session_active  = True
+    session_start_t = time.time()
+    print("\n  ▶  Session STARTED from browser")
+    return jsonify({"status": "started", "time": session_start_t})
 
-def smooth_rms(rms_val):
-    smooth_buf.append(rms_val)
-    return float(np.mean(smooth_buf))
+@app.route('/stop', methods=['POST'])
+def api_stop():
+    global session_active, session_start_t
+    session_active = False
+    duration = round(time.time() - session_start_t, 2) if session_start_t else 0
+    m = int(duration) // 60
+    s = int(duration) % 60
 
-def normalize(value, rest, mvc):
-    if mvc - rest <= 0:
-        return 0.0
-    return float(np.clip((value - rest) / (mvc - rest), 0.0, 1.0))
+    print(f"\n  ■  Session STOPPED  ({m:02d}:{s:02d})")
+    print("\n══════════════════════════════════════")
+    print("  SESSION SUMMARY")
+    print("══════════════════════════════════════")
+    print(f"  Session duration    : {m:02d}:{s:02d}")
+    print(f"  Rest baseline RMS   : {baseline_rms:.2f}")
+    print(f"  Max speech RMS      : {mvc_rms:.2f}")
+    print(f"  Signal range        : {signal_range:.2f}")
+    print(f"  Signal-to-noise     : {snr:.1f}×")
+    print(f"  Onset threshold     : {onset_thresh:.2f}")
+    print(f"  Offset threshold    : {offset_thresh:.2f}")
+    print(f"  Strain detection    : CV > {CV_MODERATE_THRESH} moderate, CV > {CV_HIGH_THRESH} high")
+    print("══════════════════════════════════════\n")
 
-def collect_calibration(duration_sec, label):
-    values = []
-    start  = time.time()
-    raw_buf.clear()
-    while time.time() - start < duration_sec:
-        rms = read_rms()
-        if rms is not None:
-            values.append(rms)
-        remaining = duration_sec - (time.time() - start)
-        print(f"  {label} — {remaining:.1f}s remaining   ", end="\r")
-    print()
-    return values
+    return jsonify({"status": "stopped", "duration": duration})
 
-def intensity_bar(norm, width=20):
-    filled = int(norm * width)
-    return "█" * filled + "░" * (width - filled)
+@app.route('/status', methods=['GET'])
+def api_status():
+    return jsonify({
+        "session_active":    session_active,
+        "baseline":          round(float(baseline_rms), 3),
+        "mvc":               round(float(mvc_rms), 3),
+        "onset":             round(float(onset_thresh), 3),
+        "offset":            round(float(offset_thresh), 3),
+        "snr":               round(float(snr), 2),
+        "cv_moderate_thresh": CV_MODERATE_THRESH,
+        "cv_high_thresh":     CV_HIGH_THRESH,
+    })
 
-def strain_label(norm):
-    if norm > 0.85:
-        return "⚠️  HIGH STRAIN"
-    elif norm > 0.6:
-        return "⚡ MODERATE"
-    else:
-        return "✅ normal"
+def run_flask():
+    app.run(host='0.0.0.0', port=API_PORT, debug=False, use_reloader=False)
 
 # ─────────────────────────────────────────
-#  ← NEW: WEBSOCKET SERVER
+#  HARDWARE SETUP
 # ─────────────────────────────────────────
-async def ws_handler(websocket):
-    """Handle a browser connection."""
-    connected_clients.add(websocket)
-    print(f"  🌐 Browser connected  (total: {len(connected_clients)})")
-    try:
-        # Send calibration info immediately on connect
-        await websocket.send(json.dumps({
-            "type": "calibration",
-            "baseline": baseline_rms,
-            "mvc":      mvc_rms,
-            "onset":    onset_thresh,
-            "offset":   offset_thresh,
-        }))
-        await websocket.wait_closed()
-    finally:
-        connected_clients.discard(websocket)
-        print(f"  🌐 Browser disconnected (total: {len(connected_clients)})")
+def setup_hardware():
+    global baseline_rms, mvc_rms, signal_range, onset_thresh, offset_thresh, snr
 
-async def broadcast(payload):
-    """Send JSON payload to all connected browsers."""
-    if not connected_clients:
-        return
-    msg = json.dumps(payload)
-    # Use asyncio.gather so all clients get it in parallel
-    await asyncio.gather(
-        *[ws.send(msg) for ws in list(connected_clients)],
-        return_exceptions=True
-    )
+    print(f"\n  Connecting to ESP32 on {PORT} at {BAUD} baud...")
+    ser = serial.Serial(PORT, BAUD, timeout=1)
+    time.sleep(2)
+    ser.reset_input_buffer()
+    print(f"  ✅  Connected to ESP32 on {PORT}\n")
 
-def start_ws_server():
-    """Run the WebSocket server in its own thread + event loop."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    raw_buf    = deque(maxlen=RAW_BUF_SIZE)
+    smooth_buf = deque(maxlen=SMOOTH_BUF_SIZE)
+    strain_buf = deque(maxlen=STRAIN_BUF_SIZE)   # for CV calculation
 
-    async def _serve():
-        async with websockets.serve(ws_handler, "localhost", WS_PORT):
-            print(f"  🌐 WebSocket server running on ws://localhost:{WS_PORT}")
-            await asyncio.Future()   # run forever
-
-    loop.run_until_complete(_serve())
-
-# Start WebSocket server in background thread  ← NEW
-ws_thread = threading.Thread(target=start_ws_server, daemon=True)
-ws_thread.start()
-
-# Keep a reference to the WS event loop so we can schedule broadcasts
-_ws_loop = None
-def _store_loop():
-    global _ws_loop
-    time.sleep(0.5)   # give thread time to create its loop
-    import asyncio
-    for t in threading.enumerate():
-        if t is ws_thread:
-            break
-    # grab via introspection
-_store_loop_thread = threading.Thread(target=_store_loop, daemon=True)
-_store_loop_thread.start()
-
-def broadcast_sync(payload):
-    """Call broadcast() from the main (non-async) thread safely."""
-    for loop in [t._target.__globals__.get('loop') 
-                 for t in threading.enumerate() 
-                 if hasattr(t, '_target') and t._target]:
-        pass
-    # Simpler approach: use a queue
-    _broadcast_queue.put_nowait(payload)
-
-import queue
-_broadcast_queue = queue.Queue()
-
-def _ws_broadcaster():
-    """Dedicated thread: drains the queue and broadcasts over WebSocket."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    async def _run():
+    # ── DSP functions ──
+    def read_raw():
         while True:
+            line = ser.readline().decode(errors="ignore").strip()
             try:
-                payload = _broadcast_queue.get_nowait()
-                await broadcast(payload)
-            except queue.Empty:
-                await asyncio.sleep(0.005)
+                val = float(line)
+                if 0 <= val <= 4095:
+                    return val
+            except ValueError:
+                continue
 
-    loop.run_until_complete(_run())
+    def read_rms():
+        val = read_raw()
+        raw_buf.append(val)
+        if len(raw_buf) < RAW_BUF_SIZE:
+            return None
+        dc = np.mean(raw_buf)
+        ac = np.array(raw_buf) - dc
+        return float(np.sqrt(np.mean(ac ** 2)))
 
-broadcaster_thread = threading.Thread(target=_ws_broadcaster, daemon=True)
-broadcaster_thread.start()
+    def smooth_rms(rms_val):
+        smooth_buf.append(rms_val)
+        return float(np.mean(smooth_buf))
 
-# ─────────────────────────────────────────
-#  STEP 1 — REST CALIBRATION  (unchanged)
-# ─────────────────────────────────────────
-print("\n══════════════════════════════════════")
-print("  STEP 1 — REST CALIBRATION")
-print("══════════════════════════════════════")
-input("  Press Enter when ready...")
-rest_vals    = collect_calibration(REST_TIME, "Recording rest")
-baseline_rms = np.percentile(rest_vals, 75)
-print(f"\n  ✔ Rest RMS baseline : {baseline_rms:.2f}")
+    def normalize(value, rest, mvc):
+        if mvc - rest <= 0:
+            return 0.0
+        return float(np.clip((value - rest) / (mvc - rest), 0.0, 1.0))
 
-# ─────────────────────────────────────────
-#  STEP 2 — SPEECH CALIBRATION  (unchanged)
-# ─────────────────────────────────────────
-print("\n══════════════════════════════════════")
-print("  STEP 2 — SPEECH CALIBRATION")
-print("══════════════════════════════════════")
-input("  Press Enter, then immediately start speaking...")
-speech_vals   = collect_calibration(SPEECH_TIME, "Recording speech")
-mvc_rms       = np.percentile(speech_vals, 90)
-snr           = mvc_rms / baseline_rms if baseline_rms > 0 else 0
-signal_range  = mvc_rms - baseline_rms
-onset_thresh  = baseline_rms + (signal_range * 0.35)
-offset_thresh = baseline_rms + (signal_range * 0.15)
+    def collect_calibration(duration_sec, label):
+        values = []
+        start  = time.time()
+        raw_buf.clear()
+        while time.time() - start < duration_sec:
+            rms = read_rms()
+            if rms is not None:
+                values.append(rms)
+            remaining = duration_sec - (time.time() - start)
+            print(f"  {label} — {remaining:.1f}s remaining   ", end="\r")
+        print()
+        return values
 
-print(f"\n  ✔ Max speech RMS    : {mvc_rms:.2f}")
-print(f"  ✔ Onset  threshold  : {onset_thresh:.2f}")
-print(f"  ✔ Offset threshold  : {offset_thresh:.2f}")
+    # ── STEP 1: REST ──
+    print("══════════════════════════════════════")
+    print("  STEP 1 — REST CALIBRATION")
+    print("══════════════════════════════════════")
+    print("  • Sit still, jaw and neck fully relaxed")
+    print("  • Do NOT speak, swallow, or move\n")
+    input("  Press Enter when ready...")
 
-# ─────────────────────────────────────────
-#  STEP 3 — REAL-TIME MONITORING
-# ─────────────────────────────────────────
-print("\n══════════════════════════════════════")
-print("  STEP 3 — REAL-TIME SPEECH DETECTION")
-print("══════════════════════════════════════")
-print("  Speak naturally. Press Ctrl+C to stop.\n")
+    rest_vals    = collect_calibration(REST_TIME, "Recording rest")
+    baseline_rms = float(np.percentile(rest_vals, 75))
+    baseline_std = float(np.std(rest_vals))
+    print(f"\n  ✔  Rest RMS baseline : {baseline_rms:.2f}  (std: {baseline_std:.2f})")
 
-smooth_buf.clear()
-session_start        = time.time()
-graph_update_counter = 0
+    # ── STEP 2: SPEECH ──
+    print("\n══════════════════════════════════════")
+    print("  STEP 2 — SPEECH CALIBRATION")
+    print("══════════════════════════════════════")
+    print("  • Say 'AAAAAAA' loudly and continuously")
+    print("  • Speak naturally — not forced or tense\n")
+    input("  Press Enter, then immediately start speaking...")
 
-try:
-    while True:
+    speech_vals   = collect_calibration(SPEECH_TIME, "Recording speech")
+    mvc_rms       = float(np.percentile(speech_vals, 90))
+    snr           = mvc_rms / baseline_rms if baseline_rms > 0 else 0
+    signal_range  = mvc_rms - baseline_rms
+
+    # Onset/offset for speech DETECTION (when speaking vs silent)
+    onset_thresh  = baseline_rms + signal_range * 0.25   # lowered — detect speech onset reliably
+    offset_thresh = baseline_rms + signal_range * 0.10   # lowered — detect silence reliably
+
+    # Tension threshold: if RMS stays above this during silence = muscle is tense
+    tension_thresh = baseline_rms + signal_range * TENSION_THRESH_RATIO
+
+    total_latency_ms = (RAW_BUF_SIZE + SMOOTH_BUF_SIZE) / FS * 1000
+
+    if snr < 1.3:
+        print("\n  ⚠️  LOW SNR — check electrode placement and redo calibration")
+    elif snr >= 2.0:
+        print("\n  ✅  Excellent signal quality!")
+    else:
+        print("\n  ✅  Signal OK")
+
+    print(f"\n  🚀  Ready! Open browser → semg.html → click Start Session\n")
+
+    # ── Per-sample state ──
+    in_speech_hw    = False
+    speech_start_ms = None
+    speech_count_hw = 0
+    server_start_t  = time.time()
+    smooth_buf.clear()
+    strain_buf.clear()
+
+    def compute_strain(smoothed, in_speech):
+        """
+        Strain is computed from two signals:
+
+        1. Coefficient of Variation (CV) of recent smoothed RMS.
+           CV = std / mean over ~200ms window.
+           - Normal speech: low CV (consistent activation)
+           - Stuttering: high CV (erratic bursts and breaks)
+
+        2. Tension during silence: if smoothed RMS stays elevated
+           above tension_thresh even when NOT speaking, muscles
+           are tense — indicates strain.
+
+        Returns: 'high' | 'moderate' | 'normal'
+        """
+        strain_buf.append(smoothed)
+
+        if len(strain_buf) < STRAIN_BUF_SIZE // 2:
+            return "normal"   # not enough data yet
+
+        arr  = np.array(strain_buf)
+        mean = np.mean(arr)
+        std  = np.std(arr)
+        cv   = std / mean if mean > 0 else 0
+
+        # Tension check: silence but muscles still tense
+        if not in_speech and smoothed > tension_thresh:
+            return "high"
+
+        # Variability check: during speech
+        if in_speech:
+            if cv > CV_HIGH_THRESH:
+                return "high"
+            elif cv > CV_MODERATE_THRESH:
+                return "moderate"
+
+        return "normal"
+
+    # ── next_sample() ──
+    def next_sample():
+        nonlocal in_speech_hw, speech_start_ms, speech_count_hw
+        global session_active
+
         rms_val = read_rms()
         if rms_val is None:
-            continue
+            return None
 
         smoothed = smooth_rms(rms_val)
         norm     = normalize(smoothed, baseline_rms, mvc_rms)
         now_ms   = time.time() * 1000
-        now_s    = time.time() - session_start
+        elapsed  = time.time() - server_start_t
 
-        graph_rms.append(rms_val)
-        graph_smoothed.append(smoothed)
-        graph_norm.append(norm)
-        graph_time.append(now_s)
+        event  = None
+        strain = compute_strain(smoothed, in_speech_hw)
 
-        is_speaking = (smoothed > onset_thresh) or (norm > 0.40)
-        is_silent   = (smoothed < offset_thresh) and (norm < 0.25)
-        event_label = None
+        # ── Speech detection (onset/offset based) ──
+        is_speaking = smoothed > onset_thresh
+        is_silent   = smoothed < offset_thresh
 
-        if not in_speech and is_speaking:
-            in_speech    = True
-            speech_start = now_ms
-            speech_count += 1
-            graph_events.append((now_s, 'START'))
-            event_label = "SPEECH_START"
-            event = "🔴 SPEECH START"
+        if session_active:
+            if not in_speech_hw and is_speaking:
+                in_speech_hw    = True
+                speech_start_ms = now_ms
+                speech_count_hw += 1
+                event = "SPEECH_START"
+                print(f"  🔴 START  [#{speech_count_hw}]  "
+                      f"rms={rms_val:.1f}  norm={norm:.2f}  strain={strain}")
 
-        elif in_speech and is_silent:
-            duration_ms = now_ms - speech_start
-            in_speech   = False
-            if duration_ms > MIN_SPEECH_MS:
-                graph_events.append((now_s, 'END'))
-                event_label = "SPEECH_END"
-                event = f"⭕ END ({duration_ms:.0f}ms)"
-            else:
-                speech_count -= 1
-                event = "   (noise, ignored)"
+            elif in_speech_hw and is_silent:
+                duration_ms  = now_ms - speech_start_ms
+                in_speech_hw = False
+                if duration_ms > MIN_SPEECH_MS:
+                    event = "SPEECH_END"
+                    print(f"  ⭕  END  ({duration_ms:.0f}ms)  strain={strain}")
+                else:
+                    speech_count_hw -= 1   # noise, ignore
         else:
-            event = "🔴 speaking..." if in_speech else "   silence"
+            if in_speech_hw:
+                in_speech_hw = False
+                event = "SPEECH_END"
 
-        # ← NEW: broadcast to browser every sample
-        _broadcast_queue.put_nowait({
-            "type":        "sample",
-            "t":           round(now_s, 3),
-            "rms":         round(rms_val, 3),
-            "smoothed":    round(smoothed, 3),
-            "norm":        round(norm, 4),
-            "in_speech":   in_speech,
-            "speech_count": speech_count,
-            "event":       event_label,   # "SPEECH_START" | "SPEECH_END" | null
-        })
+        return {
+            "type":           "sample",
+            "t":              round(elapsed, 3),
+            "rms":            round(rms_val, 3),
+            "smoothed":       round(smoothed, 3),
+            "norm":           round(norm, 4),
+            "in_speech":      in_speech_hw,
+            "speech_count":   speech_count_hw,
+            "event":          event,
+            "session_active": session_active,
+            "strain":         strain,           # 'normal' | 'moderate' | 'high'
+        }
 
-        bar = intensity_bar(norm)
-        print(
-            f"  {rms_val:7.2f} | {smoothed:8.2f} | {norm:5.2f} | "
-            f"{bar} | {event}  {strain_label(norm)}  [bursts: {speech_count}]"
-        )
+    return next_sample, ser
 
-except KeyboardInterrupt:
-    print("\n\n══════════════════════════════════════")
-    print("  SESSION SUMMARY")
-    print("══════════════════════════════════════")
-    print(f"  Total speech bursts : {speech_count}")
-    print(f"  Rest baseline       : {baseline_rms:.2f}")
-    print(f"  Max speech RMS      : {mvc_rms:.2f}")
-    print(f"  SNR                 : {snr:.1f}×")
-    ser.close()
-    print("  Serial port closed.")
+# ─────────────────────────────────────────
+#  WEBSOCKET
+# ─────────────────────────────────────────
+async def ws_handler(websocket):
+    global connected_clients
+    connected_clients.add(websocket)
+    print(f"  🌐  Browser connected  (clients: {len(connected_clients)})")
+    try:
+        await websocket.send(json.dumps({
+            "type":     "calibration",
+            "baseline": round(float(baseline_rms), 3),
+            "mvc":      round(float(mvc_rms), 3),
+            "onset":    round(float(onset_thresh), 3),
+            "offset":   round(float(offset_thresh), 3),
+            "snr":      round(float(snr), 2),
+        }))
+        await websocket.wait_closed()
+    finally:
+        connected_clients.discard(websocket)
+        print(f"  🌐  Browser disconnected (clients: {len(connected_clients)})")
+
+async def send_to_all(payload):
+    global connected_clients
+    if not connected_clients:
+        return
+    msg  = json.dumps(payload)
+    dead = set()
+    for ws in list(connected_clients):
+        try:
+            await ws.send(msg)
+        except Exception:
+            dead.add(ws)
+    connected_clients -= dead
+
+async def broadcast_loop(next_sample_fn):
+    loop = asyncio.get_event_loop()
+    while True:
+        payload = await loop.run_in_executor(None, next_sample_fn)
+        if payload is not None:
+            await send_to_all(payload)
+
+# ─────────────────────────────────────────
+#  MAIN
+# ─────────────────────────────────────────
+async def main():
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print(f"  🔌  REST API  → http://localhost:{API_PORT}")
+
+    next_sample_fn, ser = setup_hardware()
+
+    print(f"  🌐  WebSocket → ws://localhost:{WS_PORT}")
+    print(f"  ⏹   Press Ctrl+C to stop\n")
+
+    try:
+        async with websockets.serve(ws_handler, "localhost", WS_PORT):
+            await broadcast_loop(next_sample_fn)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        ser.close()
+        print("\n  Serial port closed.")
+        print("  Server stopped.")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n  Server stopped.")

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VAAKYA – Episode History</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/episodehistory.css"/>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="nav-left">
+      <div class="nav-brand">
+        <div class="nav-brand-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm-1 13H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+        </div>
+        <!-- FIX: consistent brand name VAAKYA everywhere -->
+        <span class="nav-brand-name">VAAKYA</span>
+      </div>
+      <!-- FIX: back to sibling dashboard.html -->
+      <button class="back-btn" id="backBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Back to Dashboard
+      </button>
+    </div>
+    <div class="nav-right">
+      <button class="btn-clear" id="clearAllBtn">Clear All</button>
+      <div class="nav-avatar">ST</div>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <div>
+      <h1>Episode History</h1>
+      <p class="page-sub">All recorded sEMG sessions for Sarah Thomas</p>
+    </div>
+    <div class="summary-pills" id="summaryPills">
+      <div class="summary-pill">
+        <span class="pill-label">Total Sessions</span>
+        <span class="pill-value" id="totalSessions">0</span>
+      </div>
+      <div class="summary-pill">
+        <span class="pill-label">Total Bursts</span>
+        <span class="pill-value" id="totalBursts">0</span>
+      </div>
+      <div class="summary-pill">
+        <span class="pill-label">Avg Peak Activation</span>
+        <span class="pill-value" id="avgPeak">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sessions-wrap" id="sessionsWrap">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      <h3>No sessions recorded yet</h3>
+      <p>Go to the Live sEMG page, press Start Session, speak, then press Stop Session. Your data will appear here.</p>
+      <!-- FIX: link to dashboard, not dashboard.html typo -->
+      <button class="btn-primary" onclick="window.location.href='dashboard.html'">Go to Dashboard</button>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="../js/episodehistory.js"></script>
+  <script>
+    // Always navigate back to dashboard directly
+    document.getElementById('backBtn').addEventListener('click', function(e) {
+      e.preventDefault();
+      window.location.href = 'dashboard.html';
+    });
+  </script>
+</body>
+</html>

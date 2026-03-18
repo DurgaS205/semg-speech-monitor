@@ -2,7 +2,7 @@ const loginBtn = document.getElementById('loginBtn');
 const errorMsg = document.getElementById('errorMsg');
 
 loginBtn.addEventListener('click', function () {
-  const email = document.getElementById('email').value.trim();
+  const email    = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value.trim();
 
   errorMsg.textContent = '';
@@ -22,10 +22,10 @@ loginBtn.addEventListener('click', function () {
     return;
   }
 
-  // Save email to sessionStorage so dashboard can show it
-  sessionStorage.setItem('userEmail', email);
+  // Use localStorage — persists across pages and direct URL access
+  localStorage.setItem('vaakya_userEmail', email);
+  localStorage.setItem('vaakya_loggedIn', 'true');
 
-  // Redirect to dashboard
   window.location.href = 'dashboard.html';
 });
 
