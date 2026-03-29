@@ -9,52 +9,26 @@ import serial
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-# ═══════════════════════════════════════════════════════════
-#  VAAKYA — sEMG SERVER  (Hardware Mode)
-#
-#  KEY FIX: Strain is NOT based on signal level alone.
-#  Normal speech always produces high RMS — that is expected.
-#  Strain/stuttering is detected by:
-#    1. RMS variability (coefficient of variation) — stuttering
-#       causes erratic spikes, smooth speech has low variance
-#    2. Prolonged tension — RMS stays elevated even in silence
-#    3. Onset irregularity — abrupt starts vs smooth ramp-up
-# ═══════════════════════════════════════════════════════════
-
-# ─────────────────────────────────────────
-#  SETTINGS
-# ─────────────────────────────────────────
 PORT            = "COM7"
 BAUD            = 115200
 FS              = 200
 
-REST_TIME       = 10          # seconds for rest calibration
-SPEECH_TIME     = 10          # seconds for speech calibration
-MIN_SPEECH_MS   = 80          # ignore bursts shorter than this
+REST_TIME       = 10          
+SPEECH_TIME     = 10         
+MIN_SPEECH_MS   = 80          
 
-RAW_BUF_SIZE    = 20          # RMS window
-SMOOTH_BUF_SIZE = 3           # smoothing window
-STRAIN_BUF_SIZE = 40          # ~200ms window for variability calculation
+RAW_BUF_SIZE    = 20         
+SMOOTH_BUF_SIZE = 3           
+STRAIN_BUF_SIZE = 40          
 
 WS_PORT         = 8765
 API_PORT        = 5000
 
-# ─────────────────────────────────────────
-#  STRAIN THRESHOLDS
-#  These are based on coefficient of variation (CV = std/mean)
-#  of the smoothed RMS — NOT on signal level.
-#  Normal speech: low CV (smooth, consistent muscle activation)
-#  Stuttering:    high CV (erratic, spiky activation)
-# ─────────────────────────────────────────
-CV_MODERATE_THRESH = 0.25     # CV above this = Moderate strain
-CV_HIGH_THRESH     = 0.45     # CV above this = High strain
+CV_MODERATE_THRESH = 0.25     
+CV_HIGH_THRESH     = 0.45     
 
-# Tension threshold: RMS stays above this during silence = strain
-TENSION_THRESH_RATIO = 0.30   # 30% of signal_range above baseline
+TENSION_THRESH_RATIO = 0.30   
 
-# ─────────────────────────────────────────
-#  GLOBAL STATE
-# ─────────────────────────────────────────
 connected_clients = set()
 
 baseline_rms  = 0.0
@@ -67,9 +41,6 @@ snr           = 0.0
 session_active  = False
 session_start_t = None
 
-# ─────────────────────────────────────────
-#  FLASK API
-# ─────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
 
@@ -121,9 +92,6 @@ def api_status():
 def run_flask():
     app.run(host='0.0.0.0', port=API_PORT, debug=False, use_reloader=False)
 
-# ─────────────────────────────────────────
-#  HARDWARE SETUP
-# ─────────────────────────────────────────
 def setup_hardware():
     global baseline_rms, mvc_rms, signal_range, onset_thresh, offset_thresh, snr
 
@@ -135,9 +103,8 @@ def setup_hardware():
 
     raw_buf    = deque(maxlen=RAW_BUF_SIZE)
     smooth_buf = deque(maxlen=SMOOTH_BUF_SIZE)
-    strain_buf = deque(maxlen=STRAIN_BUF_SIZE)   # for CV calculation
+    strain_buf = deque(maxlen=STRAIN_BUF_SIZE)  
 
-    # ── DSP functions ──
     def read_raw():
         while True:
             line = ser.readline().decode(errors="ignore").strip()
@@ -179,7 +146,6 @@ def setup_hardware():
         print()
         return values
 
-    # ── STEP 1: REST ──
     print("══════════════════════════════════════")
     print("  STEP 1 — REST CALIBRATION")
     print("══════════════════════════════════════")
@@ -192,7 +158,6 @@ def setup_hardware():
     baseline_std = float(np.std(rest_vals))
     print(f"\n  ✔  Rest RMS baseline : {baseline_rms:.2f}  (std: {baseline_std:.2f})")
 
-    # ── STEP 2: SPEECH ──
     print("\n══════════════════════════════════════")
     print("  STEP 2 — SPEECH CALIBRATION")
     print("══════════════════════════════════════")
@@ -205,11 +170,9 @@ def setup_hardware():
     snr           = mvc_rms / baseline_rms if baseline_rms > 0 else 0
     signal_range  = mvc_rms - baseline_rms
 
-    # Onset/offset for speech DETECTION (when speaking vs silent)
-    onset_thresh  = baseline_rms + signal_range * 0.25   # lowered — detect speech onset reliably
-    offset_thresh = baseline_rms + signal_range * 0.10   # lowered — detect silence reliably
-
-    # Tension threshold: if RMS stays above this during silence = muscle is tense
+    onset_thresh  = baseline_rms + signal_range * 0.25  
+    offset_thresh = baseline_rms + signal_range * 0.10  
+    
     tension_thresh = baseline_rms + signal_range * TENSION_THRESH_RATIO
 
     total_latency_ms = (RAW_BUF_SIZE + SMOOTH_BUF_SIZE) / FS * 1000
@@ -223,7 +186,6 @@ def setup_hardware():
 
     print(f"\n  🚀  Ready! Open browser → semg.html → click Start Session\n")
 
-    # ── Per-sample state ──
     in_speech_hw    = False
     speech_start_ms = None
     speech_count_hw = 0
@@ -249,18 +211,16 @@ def setup_hardware():
         strain_buf.append(smoothed)
 
         if len(strain_buf) < STRAIN_BUF_SIZE // 2:
-            return "normal"   # not enough data yet
+            return "normal" 
 
         arr  = np.array(strain_buf)
         mean = np.mean(arr)
         std  = np.std(arr)
         cv   = std / mean if mean > 0 else 0
 
-        # Tension check: silence but muscles still tense
         if not in_speech and smoothed > tension_thresh:
             return "high"
 
-        # Variability check: during speech
         if in_speech:
             if cv > CV_HIGH_THRESH:
                 return "high"
@@ -269,7 +229,6 @@ def setup_hardware():
 
         return "normal"
 
-    # ── next_sample() ──
     def next_sample():
         nonlocal in_speech_hw, speech_start_ms, speech_count_hw
         global session_active
@@ -286,7 +245,6 @@ def setup_hardware():
         event  = None
         strain = compute_strain(smoothed, in_speech_hw)
 
-        # ── Speech detection (onset/offset based) ──
         is_speaking = smoothed > onset_thresh
         is_silent   = smoothed < offset_thresh
 
@@ -306,7 +264,7 @@ def setup_hardware():
                     event = "SPEECH_END"
                     print(f"  ⭕  END  ({duration_ms:.0f}ms)  strain={strain}")
                 else:
-                    speech_count_hw -= 1   # noise, ignore
+                    speech_count_hw -= 1  
         else:
             if in_speech_hw:
                 in_speech_hw = False
@@ -322,14 +280,11 @@ def setup_hardware():
             "speech_count":   speech_count_hw,
             "event":          event,
             "session_active": session_active,
-            "strain":         strain,           # 'normal' | 'moderate' | 'high'
+            "strain":         strain,        
         }
 
     return next_sample, ser
 
-# ─────────────────────────────────────────
-#  WEBSOCKET
-# ─────────────────────────────────────────
 async def ws_handler(websocket):
     global connected_clients
     connected_clients.add(websocket)
@@ -368,9 +323,6 @@ async def broadcast_loop(next_sample_fn):
         if payload is not None:
             await send_to_all(payload)
 
-# ─────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────
 async def main():
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
